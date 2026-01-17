@@ -26,6 +26,7 @@ REGION_LEAGUE = "la2" # LAS
 # --- CACHÉ (Vercel KV / Redis) ---
 # Si configuras Vercel KV, estas variables se inyectan automáticamente.
 KV_URL = os.environ.get("KV_URL")
+KV_URL = os.environ.get("KV_URL") or os.environ.get("REDIS_URL")
 redis_client = None
 
 if KV_URL:
@@ -169,40 +170,40 @@ async def get_ranking():
 
             for i, res_rank in enumerate(responses_rank):
                 amigo = amigos_validos[i]
-            try:
-                
-                datos_jugador = {
-                    "nombre": amigo['nombre'], 
-                    "tag": amigo['tag'], 
-                    "rank": "Unranked", 
-                    "lp": 0, 
-                    "winrate": 0,
-                    "partidas": 0
-                }
+                try:
+                    
+                    datos_jugador = {
+                        "nombre": amigo['nombre'], 
+                        "tag": amigo['tag'], 
+                        "rank": "Unranked", 
+                        "lp": 0, 
+                        "winrate": 0,
+                        "partidas": 0
+                    }
 
-                if res_rank.status_code == 200:
-                    colas_data = res_rank.json()
-                    for cola in colas_data:
-                        if cola["queueType"] == "RANKED_SOLO_5x5":
-                            wins = cola['wins']
-                            total = wins + cola['losses']
-                            wr = round((wins / total) * 100, 1) if total > 0 else 0
-                            
-                            tier = cola['tier']
-                            rank = cola['rank']
-                            lp = cola['leaguePoints']
-                            
-                            datos_jugador["rank"] = f"{tier} {rank}"
-                            datos_jugador["lp"] = lp
-                            datos_jugador["winrate"] = wr
-                            datos_jugador["tier"] = tier
-                            datos_jugador["division"] = rank
-                            datos_jugador["partidas"] = total
-                
-                ranking.append(datos_jugador)
-                
-            except Exception as e:
-                print(f"Error con {amigo['nombre']}: {e}")
+                    if res_rank.status_code == 200:
+                        colas_data = res_rank.json()
+                        for cola in colas_data:
+                            if cola["queueType"] == "RANKED_SOLO_5x5":
+                                wins = cola['wins']
+                                total = wins + cola['losses']
+                                wr = round((wins / total) * 100, 1) if total > 0 else 0
+                                
+                                tier = cola['tier']
+                                rank = cola['rank']
+                                lp = cola['leaguePoints']
+                                
+                                datos_jugador["rank"] = f"{tier} {rank}"
+                                datos_jugador["lp"] = lp
+                                datos_jugador["winrate"] = wr
+                                datos_jugador["tier"] = tier
+                                datos_jugador["division"] = rank
+                                datos_jugador["partidas"] = total
+                    
+                    ranking.append(datos_jugador)
+                    
+                except Exception as e:
+                    print(f"Error con {amigo['nombre']}: {e}")
 
         # Ordenar correctamente por tier, división y LP
         for jugador in ranking:
