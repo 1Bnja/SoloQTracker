@@ -10,6 +10,7 @@ interface Jugador {
   lp: number;
   winrate: number;
   partidas: number;
+  en_partida: boolean;
 }
 
 interface JugadorDetalle {
@@ -149,6 +150,15 @@ export default function Home() {
                     <td className="p-4 font-bold text-slate-500">{index + 1}</td>
                     <td className="p-4 font-medium text-white">
                       {j.nombre} <span className="text-slate-500 text-xs">#{j.tag}</span>
+                      {j.en_partida && (
+                        <span className="ml-2 inline-flex items-center gap-1.5 rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400 ring-1 ring-inset ring-green-500/20">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                          </span>
+                          LIVE
+                        </span>
+                      )}
                     </td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded text-xs font-bold border ${

@@ -143,8 +143,8 @@ async def get_ranking():
         # Si la clave sigue siendo el placeholder, devolvemos datos falsos para probar el front
         if RIOT_API_KEY == "TU_CLAVE_DE_RIOT_AQUI":
             return [
-                {"nombre": "DemoUser", "tag": "TEST", "rank": "Gold IV", "lp": 50, "winrate": 51.5},
-                {"nombre": "SinApi", "tag": "KEY", "rank": "Challenger", "lp": 999, "winrate": 60.0},
+                {"nombre": "DemoUser", "tag": "TEST", "rank": "Gold IV", "lp": 50, "winrate": 51.5, "en_partida": True},
+                {"nombre": "SinApi", "tag": "KEY", "rank": "Challenger", "lp": 999, "winrate": 60.0, "en_partida": False},
             ]
 
         # Lógica REAL de Riot
@@ -155,21 +155,30 @@ async def get_ranking():
             tasks_puuid = [get_puuid(client, a['nombre'], a['tag']) for a in AMIGOS]
             puuids = await asyncio.gather(*tasks_puuid)
 
-            # 2. Preparar tareas para obtener Rangos
+            # 2. Preparar tareas para obtener Rangos y Estado en Vivo
             tasks_rank = []
+            tasks_live = []
             amigos_validos = [] # Para mantener la relación índice-amigo
 
             for i, puuid in enumerate(puuids):
                 if puuid:
+                    # Tarea Rango
                     url_rank = f"https://{REGION_LEAGUE}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
                     tasks_rank.append(fetch_riot(client, url_rank))
+                    
+                    # Tarea En Partida (Spectator V5 usa PUUID)
+                    url_live = f"https://{REGION_LEAGUE}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+                    tasks_live.append(fetch_riot(client, url_live))
+                    
                     amigos_validos.append(AMIGOS[i])
             
-            # Ejecutar peticiones de rango en paralelo
+            # Ejecutar todas las peticiones en paralelo
             responses_rank = await asyncio.gather(*tasks_rank)
+            responses_live = await asyncio.gather(*tasks_live)
 
             for i, res_rank in enumerate(responses_rank):
                 amigo = amigos_validos[i]
+                res_live = responses_live[i]
                 try:
                     
                     datos_jugador = {
@@ -178,9 +187,11 @@ async def get_ranking():
                         "rank": "Unranked", 
                         "lp": 0, 
                         "winrate": 0,
-                        "partidas": 0
+                        "partidas": 0,
+                        "en_partida": False
                     }
 
+                    # Procesar Rango
                     if res_rank.status_code == 200:
                         colas_data = res_rank.json()
                         for cola in colas_data:
@@ -199,6 +210,10 @@ async def get_ranking():
                                 datos_jugador["tier"] = tier
                                 datos_jugador["division"] = rank
                                 datos_jugador["partidas"] = total
+                    
+                    # Procesar Partida en Vivo (200 = En juego, 404 = No en juego)
+                    if res_live.status_code == 200:
+                        datos_jugador["en_partida"] = True
                     
                     ranking.append(datos_jugador)
                     
