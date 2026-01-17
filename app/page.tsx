@@ -1,65 +1,285 @@
-import Image from "next/image";
+'use client'; // Necesario porque usamos useEffect para pedir datos
+
+import { useEffect, useState } from 'react';
+import React from 'react';
+
+interface Jugador {
+  nombre: string;
+  tag: string;
+  rank: string;
+  lp: number;
+  winrate: number;
+  partidas: number;
+}
+
+interface JugadorDetalle {
+  campeon: {
+    nombre: string;
+    partidas: number;
+    winrate: number;
+    kda: number;
+  } | null;
+  duo: {
+    nombre: string;
+    partidas: number;
+    winrate: number;
+  } | null;
+  kda_general: number;
+  partidas_temporada: number;
+}
 
 export default function Home() {
+  const [jugadores, setJugadores] = useState<Jugador[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandido, setExpandido] = useState<string | null>(null);
+  const [detalles, setDetalles] = useState<{ [key: string]: JugadorDetalle }>({});
+  const [loadingDetalle, setLoadingDetalle] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Llamamos a nuestra API interna. Next.js redirige esto a Python.
+    fetch('/api/ranking')
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error("Respuesta no es JSON:", text);
+          throw new Error("Respuesta inválida del servidor");
+        }
+      })
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setJugadores(data);
+        } else {
+          console.error("Data no es un array:", data);
+          setJugadores([]);
+        }
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Error cargando ranking:", err);
+        setJugadores([]);
+        setLoading(false);
+      });
+  }, []);
+
+  const handleExpandir = async (nombre: string, tag: string) => {
+    const key = `${nombre}#${tag}`;
+    
+    // Si ya está expandido, colapsar
+    if (expandido === key) {
+      setExpandido(null);
+      return;
+    }
+    
+    // Expandir
+    setExpandido(key);
+    
+    // Si ya tenemos los datos, no hacer la petición de nuevo
+    if (detalles[key]) {
+      return;
+    }
+    
+    // Cargar detalles
+    setLoadingDetalle(key);
+    try {
+      const res = await fetch(`/api/jugador/${encodeURIComponent(nombre)}/${encodeURIComponent(tag)}`);
+      
+      if (!res.ok) {
+        console.error(`Error HTTP: ${res.status}`);
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("Respuesta no es JSON:", text);
+        throw new Error("Respuesta inválida del servidor");
+      }
+      
+      setDetalles(prev => ({ ...prev, [key]: data }));
+    } catch (err) {
+      console.error("Error cargando detalles:", err);
+    } finally {
+      setLoadingDetalle(null);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="flex min-h-screen flex-col items-center p-8 bg-slate-950 text-slate-200">
+      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-blue-500 to-teal-400 bg-clip-text text-transparent">
+          Solo Q Tracker
+        </h1>
+
+        {loading ? (
+          <div className="flex justify-center mt-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto bg-slate-900 rounded-xl shadow-2xl border border-slate-800">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-700 text-slate-400 uppercase text-xs tracking-wider">
+                  <th className="p-4">#</th>
+                  <th className="p-4">Invocador</th>
+                  <th className="p-4">Rango</th>
+                  <th className="p-4">LP</th>
+                  <th className="p-4 text-center">Partidas</th>
+                  <th className="p-4 text-center">Winrate</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {jugadores.map((j, index) => {
+                  const key = `${j.nombre}#${j.tag}`;
+                  const isExpanded = expandido === key;
+                  const detalle = detalles[key];
+                  
+                  return (
+                    <React.Fragment key={key}>
+                      <tr 
+                        className="hover:bg-slate-800 transition-colors duration-200 cursor-pointer"
+                        onClick={() => handleExpandir(j.nombre, j.tag)}
+                      >
+                    <td className="p-4 font-bold text-slate-500">{index + 1}</td>
+                    <td className="p-4 font-medium text-white">
+                      {j.nombre} <span className="text-slate-500 text-xs">#{j.tag}</span>
+                    </td>
+                    <td className="p-4">
+                      <span className={`px-2 py-1 rounded text-xs font-bold border ${
+                        j.rank.includes('Gold') ? 'bg-yellow-900/30 text-yellow-500 border-yellow-700' :
+                        j.rank.includes('Platinum') ? 'bg-teal-900/30 text-teal-400 border-teal-700' :
+                        j.rank.includes('Diamond') ? 'bg-blue-900/30 text-blue-400 border-blue-700' :
+                        'bg-slate-700/50 text-slate-300 border-slate-600'
+                      }`}>
+                        {j.rank}
+                      </span>
+                    </td>
+                    <td className="p-4 text-slate-300">{j.lp} LP</td>
+                    <td className="p-4 text-center text-slate-300 font-medium">{j.partidas}</td>
+                    <td className="p-4">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`text-xs font-bold ${j.winrate >= 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {j.winrate}%
+                        </span>
+                        <div className="w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full ${j.winrate >= 50 ? 'bg-emerald-500' : 'bg-rose-500'}`} 
+                            style={{ width: `${j.winrate}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                  {/* Fila expandible con detalles */}
+                  {isExpanded && (
+                    <tr className="bg-slate-800/50">
+                      <td colSpan={6} className="p-6">
+                        {loadingDetalle === key ? (
+                          <div className="flex justify-center py-4">
+                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                          </div>
+                        ) : detalle ? (
+                          <div className="space-y-4">
+                            {/* KDA General */}
+                            <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                              <h3 className="text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">
+                                📊 Estadísticas de la temporada
+                              </h3>
+                              <div className="flex gap-6">
+                                <div>
+                                  <p className="text-slate-400 text-xs">KDA General</p>
+                                  <p className={`text-2xl font-bold ${
+                                    detalle.kda_general >= 3 ? 'text-emerald-400' : 
+                                    detalle.kda_general >= 2 ? 'text-blue-400' : 
+                                    'text-slate-300'
+                                  }`}>
+                                    {detalle.kda_general}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-slate-400 text-xs">Partidas Analizadas</p>
+                                  <p className="text-2xl font-bold text-slate-300">{detalle.partidas_temporada}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-6">
+                            {/* Campeón más jugado */}
+                            <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                              <h3 className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-wider">
+                                🏆 Campeón más jugado
+                              </h3>
+                              {detalle.campeon ? (
+                                <div className="flex items-center gap-4">
+                                  <img 
+                                    src={`https://ddragon.leagueoflegends.com/cdn/14.1.1/img/champion/${detalle.campeon.nombre}.png`}
+                                    alt={detalle.campeon.nombre}
+                                    className="w-16 h-16 rounded-lg border-2 border-slate-600"
+                                    onError={(e) => {
+                                      e.currentTarget.src = 'https://ddragon.leagueoflegends.com/cdn/14.1.1/img/profileicon/29.png';
+                                    }}
+                                  />
+                                  <div>
+                                    <p className="font-bold text-white text-lg">{detalle.campeon.nombre}</p>
+                                    <p className="text-slate-400 text-sm">{detalle.campeon.partidas} partidas</p>
+                                    <div className="flex gap-3 mt-1">
+                                      <p className={`font-bold text-sm ${detalle.campeon.winrate >= 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        {detalle.campeon.winrate}% WR
+                                      </p>
+                                      <p className={`font-bold text-sm ${
+                                        detalle.campeon.kda >= 3 ? 'text-emerald-400' : 
+                                        detalle.campeon.kda >= 2 ? 'text-blue-400' : 
+                                        'text-slate-300'
+                                      }`}>
+                                        {detalle.campeon.kda} KDA
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-slate-500 text-sm">Sin datos</p>
+                              )}
+                            </div>
+
+                            {/* Duo más frecuente */}
+                            <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                              <h3 className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-wider">
+                                👥 Duo más frecuente
+                              </h3>
+                              {detalle.duo ? (
+                                <div>
+                                  <p className="font-bold text-white text-lg">{detalle.duo.nombre}</p>
+                                  <p className="text-slate-400 text-sm">{detalle.duo.partidas} partidas juntos</p>
+                                  <p className={`font-bold text-sm ${detalle.duo.winrate >= 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {detalle.duo.winrate}% WR
+                                  </p>
+                                </div>
+                              ) : (
+                                <p className="text-slate-500 text-sm">Sin duo frecuente</p>
+                              )}
+                            </div>
+                          </div>
+                          </div>
+                        ) : (
+                          <p className="text-slate-500 text-center">Error cargando datos</p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </main>
   );
 }

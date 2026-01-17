@@ -1,0 +1,10 @@
+[00:00:02.168] Server  LOG     ✓ Ready in 1710ms
+[00:00:02.423] Server  WARN    ⚠ Lockfile was successfully patched, please run "npm install" to ensure @next/swc dependencies are downloaded
+[00:00:12.998] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:13.042] Server  ERROR   (node:1336) [DEP0060] DeprecationWarning: The `util._extend` API is deprecated. Please use Object.assign() instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[00:00:13.057] Server  ERROR   Failed to proxy http://127.0.0.1:8000/api/ranking Error: connect ECONNREFUSED 127.0.0.1:8000
+[00:00:13.059] Server  ERROR   Error: connect ECONNREFUSED 127.0.0.1:8000
+[00:00:13.234] Browser ERROR   Error cargando ranking: {}
+[00:00:35.675] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:13:21.728] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
