@@ -1,6 +1,6 @@
 'use client'; // Necesario porque usamos useEffect para pedir datos
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import React from 'react';
 
 interface Jugador {
@@ -11,6 +11,7 @@ interface Jugador {
   winrate: number;
   partidas: number;
   en_partida: boolean;
+  puntos_totales?: number;
 }
 
 interface JugadorDetalle {
@@ -35,6 +36,11 @@ export default function Home() {
   const [expandido, setExpandido] = useState<string | null>(null);
   const [detalles, setDetalles] = useState<{ [key: string]: JugadorDetalle }>({});
   const [loadingDetalle, setLoadingDetalle] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState('');
+  const [orden, setOrden] = useState<{ campo: string; direccion: 'asc' | 'desc' }>({
+    campo: 'puntos_totales', // Orden por defecto (Rango real)
+    direccion: 'desc'
+  });
 
   useEffect(() => {
     // Llamamos a nuestra API interna. Next.js redirige esto a Python.
@@ -111,12 +117,74 @@ export default function Home() {
     }
   };
 
+  const handleSort = (campo: string) => {
+    setOrden(prev => ({
+      campo,
+      direccion: prev.campo === campo && prev.direccion === 'desc' ? 'asc' : 'desc'
+    }));
+  };
+
+  const jugadoresFiltrados = useMemo(() => {
+    let data = [...jugadores];
+
+    // 1. Filtrar
+    if (filtro) {
+      const f = filtro.toLowerCase();
+      data = data.filter(j => 
+        j.nombre.toLowerCase().includes(f) || 
+        j.tag.toLowerCase().includes(f)
+      );
+    }
+
+    // 2. Ordenar
+    data.sort((a, b) => {
+      // Si ordenamos por 'rank', usamos 'puntos_totales' que viene del backend para mayor precisión
+      const campoA = orden.campo === 'rank' ? (a.puntos_totales ?? 0) : (a as any)[orden.campo];
+      const campoB = orden.campo === 'rank' ? (b.puntos_totales ?? 0) : (b as any)[orden.campo];
+
+      if (typeof campoA === 'string' && typeof campoB === 'string') {
+        return orden.direccion === 'asc' ? campoA.localeCompare(campoB) : campoB.localeCompare(campoA);
+      }
+      
+      if (campoA < campoB) return orden.direccion === 'asc' ? -1 : 1;
+      if (campoA > campoB) return orden.direccion === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return data;
+  }, [jugadores, filtro, orden]);
+
+  // Componente auxiliar para la flecha de orden
+  const SortIcon = ({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) => (
+    <span className={`ml-1 text-xs ${active ? 'text-blue-400' : 'text-slate-600'}`}>
+      {active ? (dir === 'asc' ? '▲' : '▼') : '↕'}
+    </span>
+  );
+
   return (
     <main className="flex min-h-screen flex-col items-center p-8 bg-slate-950 text-slate-200">
       <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm">
         <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-blue-500 to-teal-400 bg-clip-text text-transparent">
           Solo Q Tracker
         </h1>
+
+        {/* Barra de Búsqueda */}
+        <div className="mb-6 flex justify-center">
+          <div className="relative w-full max-w-md">
+            <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+              <svg className="w-4 h-4 text-slate-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
+              </svg>
+            </div>
+            <input
+              type="text"
+              className="block w-full p-4 pl-10 text-sm border rounded-lg bg-slate-900 border-slate-700 placeholder-slate-400 text-white focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Buscar por nombre o tag..."
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+            />
+          </div>
+        </div>
 
         {loading ? (
           <div className="flex justify-center mt-20">
@@ -128,15 +196,32 @@ export default function Home() {
               <thead>
                 <tr className="border-b border-slate-700 text-slate-400 uppercase text-xs tracking-wider">
                   <th className="p-4">#</th>
-                  <th className="p-4">Invocador</th>
-                  <th className="p-4">Rango</th>
-                  <th className="p-4">LP</th>
-                  <th className="p-4 text-center">Partidas</th>
-                  <th className="p-4 text-center">Winrate</th>
+                  <th className="p-4 cursor-pointer hover:text-white select-none" onClick={() => handleSort('nombre')}>
+                    <div className="flex items-center">Invocador <SortIcon active={orden.campo === 'nombre'} dir={orden.direccion} /></div>
+                  </th>
+                  <th className="p-4 cursor-pointer hover:text-white select-none" onClick={() => handleSort('rank')}>
+                    <div className="flex items-center">Rango <SortIcon active={orden.campo === 'rank'} dir={orden.direccion} /></div>
+                  </th>
+                  <th className="p-4 cursor-pointer hover:text-white select-none" onClick={() => handleSort('lp')}>
+                    <div className="flex items-center">LP <SortIcon active={orden.campo === 'lp'} dir={orden.direccion} /></div>
+                  </th>
+                  <th className="p-4 text-center cursor-pointer hover:text-white select-none" onClick={() => handleSort('partidas')}>
+                    <div className="flex items-center justify-center">Partidas <SortIcon active={orden.campo === 'partidas'} dir={orden.direccion} /></div>
+                  </th>
+                  <th className="p-4 text-center cursor-pointer hover:text-white select-none" onClick={() => handleSort('winrate')}>
+                    <div className="flex items-center justify-center">Winrate <SortIcon active={orden.campo === 'winrate'} dir={orden.direccion} /></div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {jugadores.map((j, index) => {
+                {jugadoresFiltrados.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-500">
+                      No se encontraron jugadores
+                    </td>
+                  </tr>
+                )}
+                {jugadoresFiltrados.map((j, index) => {
                   const key = `${j.nombre}#${j.tag}`;
                   const isExpanded = expandido === key;
                   const detalle = detalles[key];

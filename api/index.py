@@ -143,8 +143,8 @@ async def get_ranking():
         # Si la clave sigue siendo el placeholder, devolvemos datos falsos para probar el front
         if RIOT_API_KEY == "TU_CLAVE_DE_RIOT_AQUI":
             return [
-                {"nombre": "DemoUser", "tag": "TEST", "rank": "Gold IV", "lp": 50, "winrate": 51.5, "en_partida": True},
-                {"nombre": "SinApi", "tag": "KEY", "rank": "Challenger", "lp": 999, "winrate": 60.0, "en_partida": False},
+                {"nombre": "DemoUser", "tag": "TEST", "rank": "Gold IV", "lp": 50, "winrate": 51.5, "en_partida": True, "puntos_totales": 1250},
+                {"nombre": "SinApi", "tag": "KEY", "rank": "Challenger", "lp": 999, "winrate": 60.0, "en_partida": False, "puntos_totales": 4899},
             ]
 
         # Lógica REAL de Riot
