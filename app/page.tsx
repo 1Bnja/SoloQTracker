@@ -44,7 +44,9 @@ export default function Home() {
 
   useEffect(() => {
     // Llamamos a nuestra API interna. Next.js redirige esto a Python.
-    fetch('/api/ranking')
+    const controller = new AbortController();
+    
+    fetch('/api/ranking', { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -67,10 +69,17 @@ export default function Home() {
         setLoading(false);
       })
       .catch((err) => {
-        console.error("Error cargando ranking:", err);
-        setJugadores([]);
-        setLoading(false);
+        if (err.name === 'AbortError') {
+          console.log('Request cancelado');
+        } else {
+          console.error("Error cargando ranking:", err);
+          setJugadores([]);
+          setLoading(false);
+        }
       });
+
+    // Cleanup: cancelar request si el componente se desmonta
+    return () => controller.abort();
   }, []);
 
   const handleExpandir = async (nombre: string, tag: string) => {

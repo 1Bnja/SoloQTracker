@@ -5,6 +5,8 @@ import asyncio
 import os
 import json
 from collections import Counter
+import tempfile
+import time
 
 app = FastAPI()
 
@@ -47,6 +49,18 @@ async def get_cache(key: str):
             return json.loads(data) if data else None
         except Exception:
             return None
+    
+    # Fallback: usar /tmp en Vercel (persiste ~5 min entre requests)
+    try:
+        cache_file = os.path.join(tempfile.gettempdir(), f"lol_cache_{key.replace(':', '_').replace('/', '_')}.json")
+        if os.path.exists(cache_file):
+            # Verificar que no haya expirado (5 minutos)
+            if time.time() - os.path.getmtime(cache_file) < 300:
+                with open(cache_file, 'r') as f:
+                    return json.load(f)
+    except Exception as e:
+        print(f"Error leyendo caché de archivo: {e}")
+    
     return LOCAL_CACHE.get(key)
 
 async def set_cache(key: str, value: any, ttl: int = 300):
@@ -57,6 +71,13 @@ async def set_cache(key: str, value: any, ttl: int = 300):
         except Exception:
             pass
     else:
+        # Guardar en /tmp para persistir entre requests en Vercel
+        try:
+            cache_file = os.path.join(tempfile.gettempdir(), f"lol_cache_{key.replace(':', '_').replace('/', '_')}.json")
+            with open(cache_file, 'w') as f:
+                json.dump(value, f)
+        except Exception as e:
+            print(f"Error escribiendo caché en archivo: {e}")
         LOCAL_CACHE[key] = value
 
 # Lista de amigos para trackear (Ejemplo)
@@ -75,16 +96,33 @@ AMIGOS = [
 
 # Semáforo para limitar concurrencia y no saturar la API key de desarrollo
 # (Las keys de dev suelen permitir ~20 requests/segundo)
-sem = asyncio.Semaphore(10)
+sem = asyncio.Semaphore(5)  # Reducido para mejor estabilidad
+
+# Timeout global para todas las peticiones HTTP (10 segundos)
+HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 async def fetch_riot(client: httpx.AsyncClient, url: str):
     async with sem:
-        resp = await client.get(url, headers={"X-Riot-Token": RIOT_API_KEY})
-        if resp.status_code == 429:
-            print("⚠️ Rate Limit. Esperando 2s...")
-            await asyncio.sleep(2)
-            return await fetch_riot(client, url)
-        return resp
+        try:
+            resp = await client.get(url, headers={"X-Riot-Token": RIOT_API_KEY}, timeout=HTTP_TIMEOUT)
+            if resp.status_code == 429:
+                print("⚠️ Rate Limit. Esperando 2s...")
+                await asyncio.sleep(2)
+                return await fetch_riot(client, url)
+            return resp
+        except httpx.TimeoutException:
+            print(f"⏱️ Timeout en: {url[:100]}...")
+            # Retornar una respuesta mock con status 504 para manejar timeout
+            class TimeoutResponse:
+                status_code = 504
+                def json(self): return {}
+            return TimeoutResponse()
+        except Exception as e:
+            print(f"❌ Error en fetch: {e}")
+            class ErrorResponse:
+                status_code = 500
+                def json(self): return {}
+            return ErrorResponse()
 
 def calcular_puntos_totales(tier, rank, lp):
     """
@@ -151,7 +189,7 @@ async def get_ranking():
         # Lógica REAL de Riot
         ranking = []
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, limits=httpx.Limits(max_connections=10)) as client:
             # 1. Obtener todos los PUUIDs en paralelo (o de caché)
             tasks_puuid = [get_puuid(client, a['nombre'], a['tag']) for a in AMIGOS]
             puuids = await asyncio.gather(*tasks_puuid)
@@ -239,7 +277,7 @@ async def get_ranking():
 async def get_jugador_detalle(nombre: str, tag: str):
     """Obtiene detalles de un jugador: campeón más jugado y duo más frecuente"""
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, limits=httpx.Limits(max_connections=5)) as client:
             # 1. Obtener PUUID (con caché)
             puuid = await get_puuid(client, nombre, tag)
             if not puuid:
