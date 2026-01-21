@@ -92,6 +92,7 @@ AMIGOS = [
     {"nombre": "Namelezz", "tag": "CHL"},
     {"nombre": "BlindWizard", "tag": "Miel"},
     {"nombre": "HølyDarkness", "tag": "Cool"},
+    {"nombre": "b o r g", "tag": "404"},
 ]
 
 # Semáforo para limitar concurrencia y no saturar la API key de desarrollo
