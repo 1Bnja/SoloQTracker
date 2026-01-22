@@ -46,8 +46,14 @@ async def get_cache(key: str):
     if redis_client:
         try:
             data = redis_client.get(key)
-            return json.loads(data) if data else None
-        except Exception:
+            if data:
+                print(f"📦 CACHÉ HIT (Redis): {key}")
+                return json.loads(data)
+            else:
+                print(f"❌ CACHÉ MISS (Redis): {key}")
+                return None
+        except Exception as e:
+            print(f"⚠️ Error Redis: {e}")
             return None
     
     # Fallback: usar /tmp en Vercel (persiste ~5 min entre requests)
@@ -57,28 +63,40 @@ async def get_cache(key: str):
             # Verificar que no haya expirado (5 minutos)
             if time.time() - os.path.getmtime(cache_file) < 300:
                 with open(cache_file, 'r') as f:
+                    print(f"📦 CACHÉ HIT (Archivo): {key}")
                     return json.load(f)
+            else:
+                print(f"⏰ CACHÉ EXPIRADO (Archivo): {key}")
     except Exception as e:
         print(f"Error leyendo caché de archivo: {e}")
     
-    return LOCAL_CACHE.get(key)
+    # Memoria local
+    if key in LOCAL_CACHE:
+        print(f"📦 CACHÉ HIT (Memoria): {key}")
+        return LOCAL_CACHE[key]
+    
+    print(f"❌ CACHÉ MISS (Todos): {key}")
+    return None
 
 async def set_cache(key: str, value: any, ttl: int = 300):
     """ttl en segundos (default 5 min)"""
     if redis_client:
         try:
             redis_client.setex(key, ttl, json.dumps(value))
-        except Exception:
-            pass
+            print(f"💾 GUARDADO EN CACHÉ (Redis): {key} (TTL: {ttl}s)")
+        except Exception as e:
+            print(f"⚠️ Error guardando en Redis: {e}")
     else:
         # Guardar en /tmp para persistir entre requests en Vercel
         try:
             cache_file = os.path.join(tempfile.gettempdir(), f"lol_cache_{key.replace(':', '_').replace('/', '_')}.json")
             with open(cache_file, 'w') as f:
                 json.dump(value, f)
+            print(f"💾 GUARDADO EN CACHÉ (Archivo): {key} (TTL: {ttl}s)")
         except Exception as e:
             print(f"Error escribiendo caché en archivo: {e}")
         LOCAL_CACHE[key] = value
+        print(f"💾 GUARDADO EN CACHÉ (Memoria): {key}")
 
 # Lista de amigos para trackear (Ejemplo)
 AMIGOS = [
@@ -170,6 +188,32 @@ def calcular_puntos_totales(tier, rank, lp):
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "La API está funcionando. Ve a /api/ranking para ver los datos."}
+
+@app.get("/api/cache/stats")
+async def cache_stats():
+    """Endpoint de diagnóstico para verificar el estado del caché"""
+    stats = {
+        "cache_type": "Redis" if redis_client else "Archivo/Memoria",
+        "redis_connected": redis_client is not None,
+        "local_cache_keys": len(LOCAL_CACHE),
+        "temp_dir": tempfile.gettempdir(),
+    }
+    
+    # Contar archivos de caché en /tmp
+    try:
+        cache_files = [f for f in os.listdir(tempfile.gettempdir()) if f.startswith("lol_cache_")]
+        stats["cache_files_count"] = len(cache_files)
+        stats["cache_files"] = cache_files[:10]  # Mostrar solo los primeros 10
+    except Exception as e:
+        stats["cache_files_error"] = str(e)
+    
+    # Verificar si existe el caché del ranking
+    ranking_cached = await get_cache("ranking:full")
+    stats["ranking_cached"] = ranking_cached is not None
+    if ranking_cached:
+        stats["ranking_players"] = len(ranking_cached)
+    
+    return stats
 
 async def get_puuid(client, nombre, tag):
     cache_key = f"puuid:{nombre}:{tag}"
