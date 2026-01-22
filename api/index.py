@@ -93,23 +93,33 @@ AMIGOS = [
     {"nombre": "BlindWizard", "tag": "Miel"},
     {"nombre": "HølyDarkness", "tag": "Cool"},
     {"nombre": "b o r g", "tag": "404"},
+    {"nombre": "R i v o t r i ł", "tag": "LAS"},
 ]
 
 # Semáforo para limitar concurrencia y no saturar la API key de desarrollo
 # (Las keys de dev suelen permitir ~20 requests/segundo)
-sem = asyncio.Semaphore(5)  # Reducido para mejor estabilidad
+sem = asyncio.Semaphore(10)  # Balance entre velocidad y estabilidad
 
 # Timeout global para todas las peticiones HTTP (10 segundos)
 HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
-async def fetch_riot(client: httpx.AsyncClient, url: str):
+async def fetch_riot(client: httpx.AsyncClient, url: str, retry_count: int = 0, max_retries: int = 3):
     async with sem:
         try:
             resp = await client.get(url, headers={"X-Riot-Token": RIOT_API_KEY}, timeout=HTTP_TIMEOUT)
             if resp.status_code == 429:
-                print("⚠️ Rate Limit. Esperando 2s...")
-                await asyncio.sleep(2)
-                return await fetch_riot(client, url)
+                if retry_count >= max_retries:
+                    print(f"⚠️ Rate Limit máximo alcanzado después de {max_retries} intentos")
+                    class RateLimitResponse:
+                        status_code = 429
+                        def json(self): return {}
+                    return RateLimitResponse()
+                
+                # Backoff exponencial: 1s, 2s, 4s
+                wait_time = 2 ** retry_count
+                print(f"⚠️ Rate Limit. Esperando {wait_time}s... (intento {retry_count + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+                return await fetch_riot(client, url, retry_count + 1, max_retries)
             return resp
         except httpx.TimeoutException:
             print(f"⏱️ Timeout en: {url[:100]}...")
@@ -180,6 +190,14 @@ async def get_puuid(client, nombre, tag):
 @app.get("/api/ranking")
 async def get_ranking():
     try:
+        # CACHÉ DEL RANKING COMPLETO (30 segundos)
+        # Esto evita que múltiples usuarios saturen la API al mismo tiempo
+        cache_key = "ranking:full"
+        cached_ranking = await get_cache(cache_key)
+        if cached_ranking:
+            print("✅ Devolviendo ranking desde caché")
+            return cached_ranking
+        
         # Si la clave sigue siendo el placeholder, devolvemos datos falsos para probar el front
         if RIOT_API_KEY == "TU_CLAVE_DE_RIOT_AQUI":
             return [
@@ -187,6 +205,7 @@ async def get_ranking():
                 {"nombre": "SinApi", "tag": "KEY", "rank": "Challenger", "lp": 999, "winrate": 60.0, "en_partida": False, "puntos_totales": 4899},
             ]
 
+        print("🔄 Generando ranking nuevo...")
         # Lógica REAL de Riot
         ranking = []
         
@@ -267,7 +286,13 @@ async def get_ranking():
             lp = jugador.get('lp', 0)
             jugador['puntos_totales'] = calcular_puntos_totales(tier, division, lp)
         
-        return sorted(ranking, key=lambda x: x.get('puntos_totales', 0), reverse=True)
+        resultado_final = sorted(ranking, key=lambda x: x.get('puntos_totales', 0), reverse=True)
+        
+        # Guardar en caché por 30 segundos
+        await set_cache("ranking:full", resultado_final, ttl=30)
+        print("✅ Ranking generado y guardado en caché")
+        
+        return resultado_final
     except Exception as e:
         print(f"❌ ERROR GENERAL EN /api/ranking: {e}")
         import traceback
