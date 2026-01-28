@@ -243,7 +243,15 @@ export default function Home() {
                       >
                     <td className="p-4 font-bold text-slate-500">{index + 1}</td>
                     <td className="p-4 font-medium text-white">
-                      {j.nombre} <span className="text-slate-500 text-xs">#{j.tag}</span>
+                      <a 
+                        href={`https://www.op.gg/summoners/las/${encodeURIComponent(j.nombre)}-${encodeURIComponent(j.tag)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-blue-400 transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {j.nombre} <span className="text-slate-500 text-xs">#{j.tag}</span>
+                      </a>
                       {j.en_partida && (
                         <span className="ml-2 inline-flex items-center gap-1.5 rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-400 ring-1 ring-inset ring-green-500/20">
                           <span className="relative flex h-2 w-2">
