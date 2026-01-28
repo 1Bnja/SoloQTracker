@@ -116,7 +116,11 @@ AMIGOS = [
 
 # Semáforo para limitar concurrencia y no saturar la API key de desarrollo
 # (Las keys de dev suelen permitir ~20 requests/segundo)
-sem = asyncio.Semaphore(10)  # Balance entre velocidad y estabilidad
+sem = asyncio.Semaphore(5)  # Reducido a 5 para mayor estabilidad
+
+# Lock para evitar múltiples generaciones simultáneas del ranking
+ranking_lock = asyncio.Lock()
+ranking_in_progress = False
 
 # Timeout global para todas las peticiones HTTP (10 segundos)
 HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
@@ -233,6 +237,8 @@ async def get_puuid(client, nombre, tag):
 
 @app.get("/api/ranking")
 async def get_ranking():
+    global ranking_in_progress
+    
     try:
         # CACHÉ DEL RANKING COMPLETO (30 segundos)
         # Esto evita que múltiples usuarios saturen la API al mismo tiempo
@@ -249,95 +255,118 @@ async def get_ranking():
                 {"nombre": "SinApi", "tag": "KEY", "rank": "Challenger", "lp": 999, "winrate": 60.0, "en_partida": False, "puntos_totales": 4899},
             ]
 
-        print("🔄 Generando ranking nuevo...")
-        # Lógica REAL de Riot
-        ranking = []
-        
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, limits=httpx.Limits(max_connections=10)) as client:
-            # 1. Obtener todos los PUUIDs en paralelo (o de caché)
-            tasks_puuid = [get_puuid(client, a['nombre'], a['tag']) for a in AMIGOS]
-            puuids = await asyncio.gather(*tasks_puuid)
-
-            # 2. Preparar tareas para obtener Rangos y Estado en Vivo
-            tasks_rank = []
-            tasks_live = []
-            amigos_validos = [] # Para mantener la relación índice-amigo
-
-            for i, puuid in enumerate(puuids):
-                if puuid:
-                    # Tarea Rango
-                    url_rank = f"https://{REGION_LEAGUE}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
-                    tasks_rank.append(fetch_riot(client, url_rank))
+        # SISTEMA DE LOCK: Solo permitir una generación a la vez
+        # Si alguien más está generando, esperamos hasta 15 segundos
+        try:
+            async with asyncio.timeout(15):
+                async with ranking_lock:
+                    # Verificar de nuevo el caché por si otro proceso lo generó mientras esperábamos
+                    cached_ranking = await get_cache(cache_key)
+                    if cached_ranking:
+                        print("✅ Otro proceso generó el ranking mientras esperábamos")
+                        return cached_ranking
                     
-                    # Tarea En Partida (Spectator V5 usa PUUID)
-                    url_live = f"https://{REGION_LEAGUE}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
-                    tasks_live.append(fetch_riot(client, url_live))
+                    ranking_in_progress = True
+                    print("🔄 Generando ranking nuevo...")
+                    # Lógica REAL de Riot
+                    ranking = []
                     
-                    amigos_validos.append(AMIGOS[i])
+                    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, limits=httpx.Limits(max_connections=5)) as client:
+                        # 1. Obtener todos los PUUIDs en paralelo (o de caché)
+                        tasks_puuid = [get_puuid(client, a['nombre'], a['tag']) for a in AMIGOS]
+                        puuids = await asyncio.gather(*tasks_puuid)
+
+                        # 2. Preparar tareas para obtener Rangos y Estado en Vivo
+                        tasks_rank = []
+                        tasks_live = []
+                        amigos_validos = [] # Para mantener la relación índice-amigo
+
+                        for i, puuid in enumerate(puuids):
+                            if puuid:
+                                # Tarea Rango
+                                url_rank = f"https://{REGION_LEAGUE}.api.riotgames.com/lol/league/v4/entries/by-puuid/{puuid}"
+                                tasks_rank.append(fetch_riot(client, url_rank))
+                                
+                                # Tarea En Partida (Spectator V5 usa PUUID)
+                                url_live = f"https://{REGION_LEAGUE}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+                                tasks_live.append(fetch_riot(client, url_live))
+                                
+                                amigos_validos.append(AMIGOS[i])
+                        
+                        # Ejecutar todas las peticiones en paralelo
+                        responses_rank = await asyncio.gather(*tasks_rank)
+                        responses_live = await asyncio.gather(*tasks_live)
+
+                        for i, res_rank in enumerate(responses_rank):
+                            amigo = amigos_validos[i]
+                            res_live = responses_live[i]
+                            try:
+                                
+                                datos_jugador = {
+                                    "nombre": amigo['nombre'], 
+                                    "tag": amigo['tag'], 
+                                    "rank": "Unranked", 
+                                    "lp": 0, 
+                                    "winrate": 0,
+                                    "partidas": 0,
+                                    "en_partida": False
+                                }
+
+                                # Procesar Rango
+                                if res_rank.status_code == 200:
+                                    colas_data = res_rank.json()
+                                    for cola in colas_data:
+                                        if cola["queueType"] == "RANKED_SOLO_5x5":
+                                            wins = cola['wins']
+                                            total = wins + cola['losses']
+                                            wr = round((wins / total) * 100, 1) if total > 0 else 0
+                                            
+                                            tier = cola['tier']
+                                            rank = cola['rank']
+                                            lp = cola['leaguePoints']
+                                            
+                                            datos_jugador["rank"] = f"{tier} {rank}"
+                                            datos_jugador["lp"] = lp
+                                            datos_jugador["winrate"] = wr
+                                            datos_jugador["tier"] = tier
+                                            datos_jugador["division"] = rank
+                                            datos_jugador["partidas"] = total
+                                
+                                # Procesar Partida en Vivo (200 = En juego, 404 = No en juego)
+                                if res_live.status_code == 200:
+                                    datos_jugador["en_partida"] = True
+                                
+                                ranking.append(datos_jugador)
+                                
+                            except Exception as e:
+                                print(f"Error con {amigo['nombre']}: {e}")
+
+                    # Ordenar correctamente por tier, división y LP
+                    for jugador in ranking:
+                        tier = jugador.get('tier', 'IRON')
+                        division = jugador.get('division', 'IV')
+                        lp = jugador.get('lp', 0)
+                        jugador['puntos_totales'] = calcular_puntos_totales(tier, division, lp)
+                    
+                    resultado_final = sorted(ranking, key=lambda x: x.get('puntos_totales', 0), reverse=True)
+                    
+                    # Guardar en caché por 60 segundos (aumentado de 30)
+                    await set_cache("ranking:full", resultado_final, ttl=60)
+                    ranking_in_progress = False
+                    print("✅ Ranking generado y guardado en caché")
+                    
+                    return resultado_final
+                    
+        except asyncio.TimeoutError:
+            # Si esperamos más de 15 segundos, devolver caché viejo si existe
+            print("⚠️ Timeout esperando el lock, devolviendo caché viejo si existe")
+            old_cache = await get_cache(cache_key)
+            if old_cache:
+                return old_cache
+            return {"error": "El servidor está ocupado, intenta de nuevo en unos segundos"}
             
-            # Ejecutar todas las peticiones en paralelo
-            responses_rank = await asyncio.gather(*tasks_rank)
-            responses_live = await asyncio.gather(*tasks_live)
-
-            for i, res_rank in enumerate(responses_rank):
-                amigo = amigos_validos[i]
-                res_live = responses_live[i]
-                try:
-                    
-                    datos_jugador = {
-                        "nombre": amigo['nombre'], 
-                        "tag": amigo['tag'], 
-                        "rank": "Unranked", 
-                        "lp": 0, 
-                        "winrate": 0,
-                        "partidas": 0,
-                        "en_partida": False
-                    }
-
-                    # Procesar Rango
-                    if res_rank.status_code == 200:
-                        colas_data = res_rank.json()
-                        for cola in colas_data:
-                            if cola["queueType"] == "RANKED_SOLO_5x5":
-                                wins = cola['wins']
-                                total = wins + cola['losses']
-                                wr = round((wins / total) * 100, 1) if total > 0 else 0
-                                
-                                tier = cola['tier']
-                                rank = cola['rank']
-                                lp = cola['leaguePoints']
-                                
-                                datos_jugador["rank"] = f"{tier} {rank}"
-                                datos_jugador["lp"] = lp
-                                datos_jugador["winrate"] = wr
-                                datos_jugador["tier"] = tier
-                                datos_jugador["division"] = rank
-                                datos_jugador["partidas"] = total
-                    
-                    # Procesar Partida en Vivo (200 = En juego, 404 = No en juego)
-                    if res_live.status_code == 200:
-                        datos_jugador["en_partida"] = True
-                    
-                    ranking.append(datos_jugador)
-                    
-                except Exception as e:
-                    print(f"Error con {amigo['nombre']}: {e}")
-
-        # Ordenar correctamente por tier, división y LP
-        for jugador in ranking:
-            tier = jugador.get('tier', 'IRON')
-            division = jugador.get('division', 'IV')
-            lp = jugador.get('lp', 0)
-            jugador['puntos_totales'] = calcular_puntos_totales(tier, division, lp)
-        
-        resultado_final = sorted(ranking, key=lambda x: x.get('puntos_totales', 0), reverse=True)
-        
-        # Guardar en caché por 30 segundos
-        await set_cache("ranking:full", resultado_final, ttl=30)
-        print("✅ Ranking generado y guardado en caché")
-        
-        return resultado_final
     except Exception as e:
+        ranking_in_progress = False
         print(f"❌ ERROR GENERAL EN /api/ranking: {e}")
         import traceback
         traceback.print_exc()
