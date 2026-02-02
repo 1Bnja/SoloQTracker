@@ -104,7 +104,7 @@ AMIGOS = [
     {"nombre": "AintaxLsj", "tag": "2025"},
     {"nombre": "Freecss ツ", "tag": "HxH"},
     {"nombre": "Jamkkles", "tag": "LAS"},
-    {"nombre": "Zoldyck ツ", "tag": "HxH"},
+    {"nombre": "PipeFaCc", "tag": "LOL"},
     {"nombre": "Zetter", "tag": "CHILE"},
     {"nombre": "Namelezz", "tag": "CHL"},
     {"nombre": "BlindWizard", "tag": "Miel"},
