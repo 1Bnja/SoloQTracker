@@ -106,12 +106,12 @@ AMIGOS = [
     {"nombre": "Jamkkles", "tag": "LAS"},
     {"nombre": "Zoldyck ツ", "tag": "HxH"},
     {"nombre": "Zetter", "tag": "CHILE"},
-    {"nombre": "komboss", "tag": "boss"},
     {"nombre": "Namelezz", "tag": "CHL"},
     {"nombre": "BlindWizard", "tag": "Miel"},
     {"nombre": "HølyDarkness", "tag": "Cool"},
     {"nombre": "b o r g", "tag": "404"},
     {"nombre": "R i v o t r i ł", "tag": "LAS"},
+    {"nombre": "teas al dm", "tag": "shifu"},
 ]
 
 # Semáforo para limitar concurrencia y no saturar la API key de desarrollo
