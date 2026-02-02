@@ -309,6 +309,8 @@ async def get_ranking():
                                     "lp": 0, 
                                     "winrate": 0,
                                     "partidas": 0,
+                                    "wins": 0,
+                                    "losses": 0,
                                     "en_partida": False
                                 }
 
@@ -318,7 +320,8 @@ async def get_ranking():
                                     for cola in colas_data:
                                         if cola["queueType"] == "RANKED_SOLO_5x5":
                                             wins = cola['wins']
-                                            total = wins + cola['losses']
+                                            losses = cola['losses']
+                                            total = wins + losses
                                             wr = round((wins / total) * 100, 1) if total > 0 else 0
                                             
                                             tier = cola['tier']
@@ -331,6 +334,8 @@ async def get_ranking():
                                             datos_jugador["tier"] = tier
                                             datos_jugador["division"] = rank
                                             datos_jugador["partidas"] = total
+                                            datos_jugador["wins"] = wins
+                                            datos_jugador["losses"] = losses
                                 
                                 # Procesar Partida en Vivo (200 = En juego, 404 = No en juego)
                                 if res_live.status_code == 200:

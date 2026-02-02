@@ -10,6 +10,8 @@ interface Jugador {
   lp: number;
   winrate: number;
   partidas: number;
+  wins: number;
+  losses: number;
   en_partida: boolean;
   puntos_totales?: number;
 }
@@ -217,6 +219,7 @@ export default function Home() {
                   <th className="p-4 text-center cursor-pointer hover:text-white select-none" onClick={() => handleSort('partidas')}>
                     <div className="flex items-center justify-center">Partidas <SortIcon active={orden.campo === 'partidas'} dir={orden.direccion} /></div>
                   </th>
+                  <th className="p-4 text-center">W/L</th>
                   <th className="p-4 text-center cursor-pointer hover:text-white select-none" onClick={() => handleSort('winrate')}>
                     <div className="flex items-center justify-center">Winrate <SortIcon active={orden.campo === 'winrate'} dir={orden.direccion} /></div>
                   </th>
@@ -225,7 +228,7 @@ export default function Home() {
               <tbody className="divide-y divide-slate-800">
                 {jugadoresFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-500">
+                    <td colSpan={7} className="p-8 text-center text-slate-500">
                       No se encontraron jugadores
                     </td>
                   </tr>
@@ -274,6 +277,11 @@ export default function Home() {
                     </td>
                     <td className="p-4 text-slate-300">{j.lp} LP</td>
                     <td className="p-4 text-center text-slate-300 font-medium">{j.partidas}</td>
+                    <td className="p-4 text-center">
+                      <span className="text-emerald-400 font-bold">{j.wins}</span>
+                      <span className="text-slate-500 mx-1">/</span>
+                      <span className="text-rose-400 font-bold">{j.losses}</span>
+                    </td>
                     <td className="p-4">
                       <div className="flex flex-col items-center gap-1">
                         <span className={`text-xs font-bold ${j.winrate >= 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -291,7 +299,7 @@ export default function Home() {
                   {/* Fila expandible con detalles */}
                   {isExpanded && (
                     <tr className="bg-slate-800/50">
-                      <td colSpan={6} className="p-6">
+                      <td colSpan={7} className="p-6">
                         {loadingDetalle === key ? (
                           <div className="flex justify-center py-4">
                             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
